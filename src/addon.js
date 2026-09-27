@@ -1,20 +1,10 @@
 import sdk from 'stremio-addon-sdk';
-import { TtlCache, mapLimit } from './cache.js';
+import { TtlCache } from './cache.js';
 import { createTextFetcher } from './http.js';
 import { decodeId, sourceForUrl } from './ids.js';
-import { listUrl, parseSite, siteHosts, siteLabel } from './sites.js';
+import { catalogId, categoryListUrl, listUrl, parseSite, parseSiteCategories, siteHosts, siteLabel, sourceForCatalog } from './sites.js';
 import { createExtractor, metaFromExtraction, streamsFromExtraction } from './extractor.js';
 import { DEFAULT_CATEGORIES, DEFAULT_CATEGORY_TEXT, categoryTerm, resolvePreferences } from './preferences.js';
-
-function interleave(groups, limit) {
-  const output = [];
-  for (let index = 0; output.length < limit; index++) {
-    let added = false;
-    for (const group of groups) if (group[index]) { output.push(group[index]); added = true; if (output.length === limit) break; }
-    if (!added) break;
-  }
-  return output;
-}
 
 export function createAddon(config, dependencies = {}) {
   const fetchText = dependencies.fetchText || createTextFetcher(config);
@@ -23,16 +13,17 @@ export function createAddon(config, dependencies = {}) {
   const catalogCache = new TtlCache(config.maxCacheEntries);
   const extractCache = new TtlCache(config.maxCacheEntries);
   const itemCache = new TtlCache(config.maxCacheEntries);
+  const categoryCache = new TtlCache(Math.max(10, config.enabledSources.length));
   const extractionInFlight = new Map();
   const builder = new sdk.addonBuilder({
-    id: 'community.prism.tube', version: '1.2.0', name: 'Prism Tube',
+    id: 'community.prism.tube', version: '1.3.0', name: 'Prism Tube',
     description: 'Search and play videos from configured gay tube sources.',
-    resources: ['catalog', 'meta', 'stream'], types: ['movie'], idPrefixes: ['prism-tube:'],
-    catalogs: [{ id: 'prism-tube', type: 'movie', name: 'Prism Tube', extra: [
+    resources: ['catalog', 'meta', 'stream'], types: ['Porn'], idPrefixes: ['prism-tube:'],
+    catalogs: config.enabledSources.map(source => ({ id: catalogId(source), type: 'Porn', name: `Prism Tube · ${siteLabel(source)}`, extra: [
       { name: 'search', isRequired: false },
       { name: 'genre', isRequired: false, options: DEFAULT_CATEGORIES.map(category => category.label), optionsLimit: 1 },
       { name: 'skip', isRequired: false }
-    ] }],
+    ] })),
     config: [
       { key: 'sources', type: 'text', title: 'Enabled provider adapters', default: config.enabledSources.join(','), required: true },
       { key: 'primaryTag', type: 'text', title: 'Primary result tag', default: 'Gay Male', required: true },
@@ -40,6 +31,19 @@ export function createAddon(config, dependencies = {}) {
     ],
     behaviorHints: { adult: true, p2p: false, configurable: true }
   });
+
+  async function sourceCategories(source) {
+    const hit = categoryCache.get(source);
+    if (hit) return hit;
+    let categories = [];
+    try {
+      const html = await fetchText(categoryListUrl(source), siteHosts(source));
+      categories = parseSiteCategories(source, html);
+    } catch { log({ event: 'category_discovery_failed', source }); }
+    if (!categories.length) categories = DEFAULT_CATEGORIES.map(category => ({ ...category }));
+    categoryCache.set(source, categories, 21600);
+    return categories;
+  }
 
   async function extraction(pageUrl) {
     const hit = extractCache.get(pageUrl);
@@ -53,42 +57,39 @@ export function createAddon(config, dependencies = {}) {
   }
 
   builder.defineCatalogHandler(async ({ id, type, extra = {}, config: userConfig = {} }) => {
-    if (id !== 'prism-tube' || type !== 'movie') return { metas: [] };
+    const source = sourceForCatalog(id);
+    if (!source || type !== 'Porn') return { metas: [] };
     const preferences = resolvePreferences(userConfig, config.enabledSources);
+    if (!preferences.enabledSources.includes(source)) return { metas: [] };
     const search = String(extra.search || '').trim().slice(0, 100);
     const genre = String(extra.genre || '').trim();
-    const genreQuery = genre ? categoryTerm(preferences.categories, genre) : '';
+    const availableCategories = genre ? [...preferences.categories, ...(await sourceCategories(source))] : preferences.categories;
+    const genreQuery = genre ? categoryTerm(availableCategories, genre) : '';
     if (genre && !genreQuery) return { metas: [] };
     const query = [genreQuery, search].filter(Boolean).join(' ').slice(0, 100);
     const skip = Math.max(0, Math.min(1000, Number.parseInt(extra.skip, 10) || 0));
-    const page = Math.floor(skip / Math.max(1, Math.floor(config.maxResults / preferences.enabledSources.length)));
+    const page = Math.floor(skip / config.maxResults);
     const preferenceKey = JSON.stringify([preferences.enabledSources, preferences.primaryTag, preferences.categories]);
-    const key = `${preferenceKey}\0${genre}\0${search}\0${page}`;
+    const key = `${source}\0${preferenceKey}\0${genre}\0${search}\0${page}`;
     const cached = catalogCache.get(key);
     if (cached) return cached;
-    const groups = await mapLimit(preferences.enabledSources, config.searchConcurrency, async source => {
-      try {
-        const html = await fetchText(listUrl(source, query, page), siteHosts(source));
-        const items = parseSite(source, html);
-        for (const item of items) {
-          item.genres = [...new Set([preferences.primaryTag, ...(genre ? [genre] : [])])];
-          itemCache.set(item.id, item, 3600);
-        }
-        return items;
-      } catch {
-        log({ event: 'source_failed', source }); return [];
+    let items = [];
+    try {
+      const html = await fetchText(listUrl(source, query, page), siteHosts(source));
+      items = parseSite(source, html).slice(0, config.maxResults);
+      for (const item of items) {
+        item.genres = [...new Set([preferences.primaryTag, ...(genre ? [genre] : [])])];
+        itemCache.set(item.id, item, 3600);
       }
-    });
-    // mapLimit flattens by design; regroup here so sources remain evenly represented.
-    const bySource = preferences.enabledSources.map(source => groups.filter(item => item.source === siteLabel(source)));
-    const response = { metas: interleave(bySource, config.maxResults) };
+    } catch { log({ event: 'source_failed', source }); }
+    const response = { metas: items };
     catalogCache.set(key, response, config.cacheTtlSeconds);
-    log({ event: 'catalog_complete', search: Boolean(search), genre: genre || undefined, results: response.metas.length });
+    log({ event: 'catalog_complete', source, search: Boolean(search), genre: genre || undefined, results: response.metas.length });
     return response;
   });
 
   builder.defineMetaHandler(async ({ type, id, config: userConfig = {} }) => {
-    if (type !== 'movie') return { meta: null };
+    if (type !== 'Porn') return { meta: null };
     const preferences = resolvePreferences(userConfig, config.enabledSources);
     const pageUrl = decodeId(id);
     if (!pageUrl || !preferences.enabledSources.includes(sourceForUrl(pageUrl))) return { meta: null };
@@ -97,13 +98,13 @@ export function createAddon(config, dependencies = {}) {
     try { return { meta: { ...known, ...metaFromExtraction(await extraction(pageUrl), id, pageUrl, baseTags) } }; }
     catch {
       if (known) return { meta: known };
-      return { meta: { id, type: 'movie', name: `${siteLabel(sourceForUrl(pageUrl))} video`, genres: baseTags,
+      return { meta: { id, type: 'Porn', name: `${siteLabel(sourceForUrl(pageUrl))} video`, genres: baseTags,
         behaviorHints: { defaultVideoId: id } } };
     }
   });
 
   builder.defineStreamHandler(async ({ type, id, config: userConfig = {} }) => {
-    if (type !== 'movie') return { streams: [] };
+    if (type !== 'Porn') return { streams: [] };
     const preferences = resolvePreferences(userConfig, config.enabledSources);
     const pageUrl = decodeId(id);
     const source = pageUrl && sourceForUrl(pageUrl);
@@ -115,5 +116,9 @@ export function createAddon(config, dependencies = {}) {
     return { streams };
   });
 
-  return builder.getInterface();
+  const addon = builder.getInterface();
+  addon.discoverCategories = async () => Object.fromEntries(await Promise.all(
+    config.enabledSources.map(async source => [source, await sourceCategories(source)])
+  ));
+  return addon;
 }

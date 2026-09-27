@@ -2,7 +2,9 @@
 
 Prism Tube is a small, self-hosted Stremio add-on for browsing and playing videos from public gay sections of free tube sites. It currently supports XVideos, Homo.xxx, xHamster, and XNXX.
 
-The add-on creates a searchable Stremio catalog with category filters for Romance, Amateur, Couples, Bear, Twink, Mature, Fitness, Black, Asian, and Latino. Results carry the configured primary/category tags, and their detail metadata is enriched with tags published on the original source page. Provider tags are deduplicated and capped to keep the Stremio interface readable. Its **Configure** button lets each installation enable or disable the provider adapters, change the primary tag, and replace the category labels and search terms. Selecting a result resolves the public source page with `yt-dlp` or the page's published player metadata, returns a short list of direct HTTP/HLS stream choices, and also provides an **Open on source site** fallback. It does not download, store, proxy, or rehost videos.
+The add-on registers the custom Stremio content type **Porn**, so it appears under Porn in Discover rather than Movies. Each enabled provider has its own catalog row: **Prism Tube · XVideos**, **Prism Tube · Homo.xxx**, **Prism Tube · xHamster**, and **Prism Tube · XNXX**.
+
+Each catalog pulls up to 35 current category tags from its provider when Stremio requests the manifest. Those tags are cached for six hours, combined with configured tags, deduplicated, and capped at 55 per catalog to keep the manifest compatible with Stremio. If a provider's category page is temporarily unavailable, the add-on uses its built-in fallback set. Video details can show up to 30 additional tags published on that video's source page. The **Configure** button lets each installation enable or disable provider adapters, change the primary tag, and add custom category labels and search terms. Selecting a result resolves the public source page with `yt-dlp` or the page's published player metadata, returns a short list of direct HTTP/HLS stream choices, and also provides an **Open on source site** fallback. It does not download, store, proxy, or rehost videos.
 
 This is intended for adults, for personal and noncommercial use, where the source sites and content are lawful and available to you. It does not bypass logins, paywalls, age gates, captchas, geo-blocking, or other access controls.
 
@@ -28,7 +30,9 @@ The default local manifest is:
 http://127.0.0.1:7000/manifest.json
 ```
 
-Paste that URL into Stremio's add-on search/install field. The catalog is named **Prism Tube** and includes Stremio's catalog search control.
+Paste that URL into Stremio's add-on search/install field. The separate provider catalogs include Stremio's catalog search control.
+
+If you installed Prism Tube 1.2 or earlier, remove it from Stremio and install the manifest again. Stremio needs to reload the manifest to move the add-on from Movies to Porn and create the provider-specific catalogs.
 
 Open the add-on's **Configure** button, or visit `http://127.0.0.1:7000/configure`, to create a personalized manifest URL. The settings are encoded in that URL and are not stored by the server.
 
@@ -70,7 +74,7 @@ The settings are documented in `.env.example`.
 - `REQUEST_TIMEOUT_MS` and `EXTRACT_TIMEOUT_MS` bound slow source requests.
 - `SEARCH_CONCURRENCY` controls how many listing sites are queried at once.
 
-Per-install configuration can select a subset of the server's `ENABLED_SOURCES`. Custom categories use one `Label=search term` entry per line, with up to 20 entries.
+Per-install configuration can select a subset of the server's `ENABLED_SOURCES`; disabled providers are removed from the manifest and Discover. Custom categories use one `Label=search term` entry per line, with up to 20 entries and are combined with the categories fetched from each provider.
 
 The service uses a fixed source allowlist and accepts only recognized public video-page paths. Stream request headers are limited to User-Agent, Referer, and Origin. Extraction output is cached briefly because direct media URLs often expire.
 

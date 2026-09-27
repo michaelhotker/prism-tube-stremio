@@ -37,6 +37,7 @@ test('metadata uses extracted title and poster', () => {
   const meta = metaFromExtraction({ title: 'Example', thumbnail: 'https://img.example/poster.jpg', duration_string: '12:34',
     tags: ['Romance', 'Muscular'] }, id, pageUrl, ['Gay Male']);
   assert.equal(meta.id, id);
+  assert.equal(meta.type, 'Porn');
   assert.equal(meta.name, 'Example');
   assert.equal(meta.posterShape, 'landscape');
   assert.deepEqual(meta.genres, ['Gay Male', 'Romance', 'Muscular']);

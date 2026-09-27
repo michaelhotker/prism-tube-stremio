@@ -1,17 +1,27 @@
 import { DEFAULT_CATEGORY_TEXT, resolvePreferences } from './preferences.js';
-import { siteLabel } from './sites.js';
+import { siteLabel, sourceForCatalog } from './sites.js';
 
 const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 })[character]);
 
-export function configuredManifest(baseManifest, rawPreferences, allowedSources) {
+export function configuredManifest(baseManifest, rawPreferences, allowedSources, discovered = {}, finalized = true) {
   const preferences = resolvePreferences(rawPreferences, allowedSources);
   const manifest = structuredClone(baseManifest);
-  const genre = manifest.catalogs[0].extra.find(extra => extra.name === 'genre');
-  genre.options = preferences.categories.map(category => category.label);
-  delete manifest.behaviorHints.configurationRequired;
-  delete manifest.behaviorHints.configurable;
+  manifest.catalogs = manifest.catalogs.filter(catalog => preferences.enabledSources.includes(sourceForCatalog(catalog.id)));
+  for (const catalog of manifest.catalogs) {
+    const source = sourceForCatalog(catalog.id);
+    const seen = new Set();
+    const options = [...(discovered[source] || []), ...preferences.categories]
+      .map(category => category.label)
+      .filter(label => { const key = label.toLocaleLowerCase('en'); if (seen.has(key)) return false; seen.add(key); return true; })
+      .slice(0, 55);
+    catalog.extra.find(extra => extra.name === 'genre').options = options;
+  }
+  if (finalized) {
+    delete manifest.behaviorHints.configurationRequired;
+    delete manifest.behaviorHints.configurable;
+  }
   return manifest;
 }
 
@@ -39,7 +49,7 @@ export function renderConfigurePage(manifest, serverConfig, rawPreferences = {},
 <body><main>
   <div class="eyebrow">Stremio add-on settings</div>
   <h1>${escapeHtml(manifest.name)}</h1>
-  <p>Choose providers and edit the category tags Stremio shows in Discover. Settings stay inside your configured manifest URL.</p>
+  <p>Choose providers and add your own category tags. Each provider also supplies its current Discover tags automatically. Settings stay inside your configured manifest URL.</p>
   <form id="settings">
     <section><h2>Providers</h2><div class="sources">${sourceInputs}</div>
       <p class="hint">This server accepts only installed provider adapters. To support another site, <a href="https://github.com/michaelhotker/prism-tube-stremio/issues" target="_blank" rel="noreferrer">request or add an adapter</a>; arbitrary domains are blocked.</p>
@@ -47,7 +57,7 @@ export function renderConfigurePage(manifest, serverConfig, rawPreferences = {},
     <section><h2>Tags and categories</h2>
       <label class="field"><span>Primary tag</span><input id="primaryTag" type="text" maxlength="32" value="${escapeHtml(preferences.primaryTag)}"></label>
       <label class="field"><span>Categories</span><textarea id="categories" maxlength="2000">${escapeHtml(categoryText)}</textarea></label>
-      <p class="hint">Use one <strong>Label=search term</strong> per line. Up to 20 categories are included.</p>
+      <p class="hint">Use one <strong>Label=search term</strong> per line. Provider tags are pulled from each site, and your additions are included with them.</p>
     </section>
     <div class="status" id="status" role="alert"></div>
     <div class="actions"><a class="button primary" id="install">Install configured add-on</a><button class="secondary" type="button" id="copy">Copy manifest URL</button></div>

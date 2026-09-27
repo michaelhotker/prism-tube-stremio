@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSite, listUrl } from '../src/sites.js';
+import { catalogId, categoryListUrl, parseSite, parseSiteCategories, listUrl, sourceForCatalog } from '../src/sites.js';
 import { DEFAULT_CATEGORIES, categoryTerm } from '../src/preferences.js';
 import { decodeId, encodeId, sourceForUrl } from '../src/ids.js';
 
@@ -15,7 +15,7 @@ for (const [source, html] of Object.entries(fixtures)) test(`parses ${source} li
   const rows = parseSite(source, html);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].name, 'Example Video');
-  assert.equal(rows[0].type, 'movie');
+  assert.equal(rows[0].type, 'Porn');
   assert.equal(rows[0].posterShape, 'landscape');
   assert.ok(decodeId(rows[0].id));
 });
@@ -32,6 +32,7 @@ test('IDs only round-trip supported HTTPS video pages', () => {
 test('search URLs remain fixed to gay-scoped public listing paths', () => {
   assert.match(listUrl('xvideos', 'soft romance', 0), /^https:\/\/www\.xvideos\.com\/gay\/\?k=soft%20romance$/);
   assert.equal(listUrl('xnxx', 'soft romance', 0), 'https://www.xnxx.com/search/gay/soft%20romance');
+  assert.equal(listUrl('xnxx', '', 0), 'https://www.xnxx.com/search/gay/gay');
   assert.equal(listUrl('homo', 'soft romance', 2), 'https://homo.xxx/search/soft%20romance/2/');
   assert.equal(listUrl('xhamster', 'soft romance', 1), 'https://xhamster.com/gay/search/soft%20romance/2');
 });
@@ -40,4 +41,26 @@ test('catalog categories map to bounded neutral search terms', () => {
   assert.ok(DEFAULT_CATEGORIES.some(category => category.label === 'Romance'));
   assert.equal(categoryTerm(DEFAULT_CATEGORIES, 'Fitness'), 'muscle');
   assert.equal(categoryTerm(DEFAULT_CATEGORIES, 'Unknown'), null);
+});
+
+test('provider category pages become clean, bounded Discover tags', () => {
+  const html = '<a href="/categories/bear/">Bear (1200 videos)</a><a href="/categories/massage/">Massage (450 videos)</a><a href="/categories/teen/">Teen (9999 videos)</a><a href="/categories/2/">Next</a>';
+  assert.deepEqual(parseSiteCategories('homo', html), [
+    { label: 'Bear', query: 'bear' }, { label: 'Massage', query: 'massage' }
+  ]);
+  assert.equal(categoryListUrl('homo'), 'https://homo.xxx/categories/');
+  assert.equal(catalogId('homo'), 'prism-tube-homo');
+  assert.equal(sourceForCatalog('prism-tube-homo'), 'homo');
+  assert.equal(sourceForCatalog('prism-tube-unknown'), null);
+});
+
+test('XNXX gay category data is read from its published page payload', () => {
+  const data = [
+    { u: '/search/gay/massage?top&id=1', t: 'Massage', n: '12,000' },
+    { u: '/search/gay/bear?top&id=2', t: 'Bear', n: '4,500' }
+  ];
+  const html = `<script>thumb_block_list(${JSON.stringify(data)}, "home-cat-list");</script>`;
+  assert.deepEqual(parseSiteCategories('xnxx', html), [
+    { label: 'Massage', query: 'massage' }, { label: 'Bear', query: 'bear' }
+  ]);
 });

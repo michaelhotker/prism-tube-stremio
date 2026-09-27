@@ -22,7 +22,7 @@ export function createApp(config, dependencies) {
     if (req.originalUrl.length > 4096) return res.sendStatus(414);
     next();
   });
-  app.get('/health', (_req, res) => res.json({ status: 'ok', version: '1.2.0' }));
+  app.get('/health', (_req, res) => res.json({ status: 'ok', version: '1.3.0' }));
   const addon = createAddon(config, dependencies);
   const router = sdk.getRouter(addon);
   const sendConfigure = basePath => (req, res) => {
@@ -30,20 +30,27 @@ export function createApp(config, dependencies) {
     if (req.params.userConfig && !raw) return res.sendStatus(400);
     res.type('html').send(renderConfigurePage(addon.manifest, config, raw, basePath));
   };
-  const sendConfiguredManifest = (req, res) => {
+  const sendBaseManifest = async (_req, res) => {
+    const discovered = await addon.discoverCategories();
+    res.json(configuredManifest(addon.manifest, {}, config.enabledSources, discovered, false));
+  };
+  const sendConfiguredManifest = async (req, res) => {
     const raw = parseEncodedPreferences(req.params.userConfig);
     if (!raw) return res.sendStatus(400);
-    res.json(configuredManifest(addon.manifest, raw, config.enabledSources));
+    const discovered = await addon.discoverCategories();
+    res.json(configuredManifest(addon.manifest, raw, config.enabledSources, discovered));
   };
   if (config.addonToken) {
     const privateRoute = (req, res, next) => matches(req.params.token, config.addonToken) ? next() : res.sendStatus(404);
     app.get('/:token/configure', privateRoute, (req, res) => sendConfigure(`/${config.addonToken}`)(req, res));
     app.get('/:token/:userConfig/configure', privateRoute, (req, res) => sendConfigure(`/${config.addonToken}`)(req, res));
+    app.get('/:token/manifest.json', privateRoute, sendBaseManifest);
     app.get('/:token/:userConfig/manifest.json', privateRoute, sendConfiguredManifest);
     app.use('/:token', privateRoute, router);
   } else {
     app.get('/configure', sendConfigure(''));
     app.get('/:userConfig/configure', sendConfigure(''));
+    app.get('/manifest.json', sendBaseManifest);
     app.get('/:userConfig/manifest.json', sendConfiguredManifest);
     app.use(router);
   }

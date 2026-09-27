@@ -36,7 +36,7 @@ function findPlayer(value, seen = new WeakSet(), depth = 0) {
   return null;
 }
 
-function normalizedTags(values, limit = 14) {
+function normalizedTags(values, limit = 30) {
   const seen = new Set();
   const tags = [];
   for (const value of values.flat()) {
@@ -172,7 +172,7 @@ export function metaFromExtraction(data, id, pageUrl, baseTags = []) {
   const thumbnails = Array.isArray(data.thumbnails) ? data.thumbnails : [];
   const poster = data.thumbnail || thumbnails.at(-1)?.url;
   return {
-    id, type: 'movie', name: clean(data.title || 'Tube video'),
+    id, type: 'Porn', name: clean(data.title || 'Tube video'),
     ...(poster ? { poster, background: poster } : {}),
     posterShape: 'landscape',
     description: [SOURCE_LABELS[sourceForUrl(pageUrl)], data.duration_string].filter(Boolean).join(' · '),
