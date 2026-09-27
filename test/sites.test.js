@@ -27,6 +27,14 @@ test('IDs only round-trip supported HTTPS video pages', () => {
   assert.equal(sourceForUrl('https://evil.example/video.abc123/example'), null);
   assert.equal(sourceForUrl('https://www.xvideos.com/account/private'), null);
   assert.equal(decodeId('prism-tube:aW52YWxpZA'), null);
+  const post = 'https://x.com/Example/status/123456789';
+  assert.equal(decodeId(encodeId(post)), post);
+  assert.equal(sourceForUrl(post), 'x:example');
+  assert.equal(sourceForUrl('https://x.com/Example/media'), null);
+});
+
+test('X catalog IDs map to account-scoped sources', () => {
+  assert.equal(sourceForCatalog('prism-tube-x-example'), 'x:example');
 });
 
 test('search URLs remain fixed to gay-scoped public listing paths', () => {

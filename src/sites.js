@@ -90,11 +90,16 @@ export function listUrl(name, query = '', page = 0) {
   return site.list(clean(query).slice(0, 100), Math.max(0, Math.min(20, Number(page) || 0)));
 }
 export function siteHosts(name) { return [...(getSite(name)?.hosts || [])]; }
-export function siteLabel(name) { return getSite(name)?.label || name; }
+export function siteLabel(name) {
+  if (String(name).startsWith('x:')) return `X @${String(name).slice(2)}`;
+  return getSite(name)?.label || name;
+}
 
 export function catalogId(name) { return getSite(name) ? `prism-tube-${name}` : null; }
 export function sourceForCatalog(id) {
   const name = String(id || '').replace(/^prism-tube-/, '');
+  const x = name.match(/^x-([a-z0-9_]{1,15})$/);
+  if (x) return `x:${x[1]}`;
   return getSite(name) ? name : null;
 }
 

@@ -1,12 +1,12 @@
 # Prism Tube for Stremio
 
-Prism Tube is a small, self-hosted Stremio add-on for browsing and playing videos from public gay sections of free tube sites. It currently supports XVideos, Homo.xxx, xHamster, and XNXX.
+Prism Tube is a small, self-hosted Stremio add-on for browsing and playing videos from public gay sections of free tube sites and configured public X accounts. It supports XVideos, Homo.xxx, xHamster, XNXX, and automatic X media feeds through a bundled RSSHub service.
 
-The add-on registers the custom Stremio content type **Porn**, so it appears under Porn in Discover rather than Movies. Each enabled provider has its own catalog row: **Prism Tube · XVideos**, **Prism Tube · Homo.xxx**, **Prism Tube · xHamster**, and **Prism Tube · XNXX**.
+The add-on registers the custom Stremio content type **Porn**, so it appears under Porn in Discover rather than Movies. Each enabled provider has its own catalog row. Every configured X handle also gets a separate **Prism Tube · X @handle** row.
 
 Each catalog pulls up to 35 current category tags from its provider when Stremio requests the manifest. Those tags are cached for six hours, combined with configured tags, deduplicated, and capped at 55 per catalog to keep the manifest compatible with Stremio. If a provider's category page is temporarily unavailable, the add-on uses its built-in fallback set. Video details can show up to 30 additional tags published on that video's source page. The **Configure** button lets each installation enable or disable provider adapters, change the primary tag, and add custom category labels and search terms. Selecting a result resolves the public source page with `yt-dlp` or the page's published player metadata, returns a short list of direct HTTP/HLS stream choices, and also provides an **Open on source site** fallback. It does not download, store, proxy, or rehost videos.
 
-This is intended for adults, for personal and noncommercial use, where the source sites and content are lawful and available to you. It does not bypass logins, paywalls, age gates, captchas, geo-blocking, or other access controls.
+This is intended for adults, for personal and noncommercial use, where the source sites and content are lawful and available to you. It does not bypass logins, paywalls, age gates, captchas, or other access controls. A VPN may change the network region used by Docker, but it does not replace X account or age-verification requirements.
 
 ## Requirements
 
@@ -47,6 +47,30 @@ docker compose up --build -d
 
 The Compose configuration binds only to `127.0.0.1` by default. Use the same local manifest URL shown above.
 
+## Free automatic X catalogs
+
+The Compose stack includes RSSHub and Redis. RSSHub watches the public media timeline of each configured X account; Prism Tube reads that private internal feed, keeps posts containing video, and returns the published X video URL to Stremio. No paid X API plan is used.
+
+1. Sign in to X in your own browser. In the browser developer tools, open **Application/Storage → Cookies → https://x.com** and copy the value of the `auth_token` cookie. Do not copy the whole cookie header and never paste this value into chat, an issue, or a public repository.
+2. In `.env`, set the token and the public accounts to follow:
+
+```dotenv
+TWITTER_AUTH_TOKEN=your_auth_token_value
+X_ACCOUNTS=account_one,account_two
+```
+
+3. Rebuild and restart the stack:
+
+```sh
+docker compose up --build -d
+```
+
+4. Remove and reinstall the Prism Tube manifest, or use its **Configure** button and install the newly generated manifest. The new X rows should appear under **Porn** in Discover.
+
+Use handles without `@`. Up to 30 accounts are accepted. Prism Tube polls only when a catalogue is requested, caches the result, and automatically picks up new videos after the cache expires. The token stays in the RSSHub container environment; Prism Tube never places it in a manifest, media URL, or log entry. If X invalidates the session, replace `TWITTER_AUTH_TOKEN` with the value from a current login and restart the stack.
+
+Only public timeline media returned by X is included. Posts that require additional login, age confirmation, or other access checks can remain unavailable even when the host uses a VPN.
+
 ## Private or remote installation
 
 Set a random `ADDON_TOKEN` in `.env`:
@@ -68,6 +92,9 @@ Stremio accepts plain HTTP for local development. A remote add-on should be behi
 The settings are documented in `.env.example`.
 
 - `ENABLED_SOURCES` selects a comma-separated subset of `xvideos,homo,xhamster,xnxx`.
+- `X_ACCOUNTS` selects a comma-separated list of public X handles; each becomes a separate catalogue.
+- `TWITTER_AUTH_TOKEN` supplies RSSHub with the `auth_token` value from the operator's own X session. It is free but sensitive.
+- `RSSHUB_URL` points Prism Tube at RSSHub; Compose sets this to its internal service automatically.
 - `MAX_RESULTS` limits catalog results returned per request.
 - `MAX_STREAMS` limits direct qualities returned per video.
 - `CACHE_TTL_SECONDS` reduces repeated listing and extraction requests.

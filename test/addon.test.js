@@ -70,3 +70,20 @@ test('disabled or malformed IDs cannot invoke extraction', async () => {
   assert.deepEqual(await addon.get('stream', 'Porn', disabled), { streams: [] });
   assert.equal(calls, 0);
 });
+
+test('configured X account has its own searchable catalog and direct stream', async () => {
+  const xConfig = { ...config, xAccounts: ['example'], availableSources: ['homo', 'x:example'], rssHubBaseUrl: 'http://rsshub:1200' };
+  const pageUrl = 'https://x.com/example/status/123456789';
+  const id = encodeId(pageUrl);
+  const xItem = { id, type: 'Porn', name: 'A public clip #Fitness', poster: 'https://pbs.twimg.com/media/poster.jpg', posterShape: 'landscape',
+    description: 'X · @example', genres: ['Fitness'], behaviorHints: { defaultVideoId: id }, source: 'X @example', url: pageUrl,
+    mediaUrl: 'https://video.twimg.com/ext_tw_video/123/vid/720x1280/video.mp4' };
+  const addon = createAddon(xConfig, { log: () => {}, fetchText: async () => html, fetchTwitterFeed: async () => [xItem], extract: async () => ({}) });
+  assert.ok(addon.manifest.catalogs.some(catalog => catalog.id === 'prism-tube-x-example'));
+  const catalog = await addon.get('catalog', 'Porn', 'prism-tube-x-example', { search: 'fitness' });
+  assert.equal(catalog.metas.length, 1);
+  assert.deepEqual(catalog.metas[0].genres, ['Gay Male', 'X', 'Fitness']);
+  const streams = (await addon.get('stream', 'Porn', id)).streams;
+  assert.equal(streams[0].url, xItem.mediaUrl);
+  assert.equal(streams[1].externalUrl, pageUrl);
+});

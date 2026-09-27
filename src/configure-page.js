@@ -16,7 +16,8 @@ export function configuredManifest(baseManifest, rawPreferences, allowedSources,
       .map(category => category.label)
       .filter(label => { const key = label.toLocaleLowerCase('en'); if (seen.has(key)) return false; seen.add(key); return true; })
       .slice(0, 55);
-    catalog.extra.find(extra => extra.name === 'genre').options = options;
+    const genre = catalog.extra.find(extra => extra.name === 'genre');
+    if (genre) genre.options = options;
   }
   if (finalized) {
     delete manifest.behaviorHints.configurationRequired;
@@ -29,10 +30,10 @@ export function renderConfigurePage(manifest, serverConfig, rawPreferences = {},
   const preferences = resolvePreferences(rawPreferences, serverConfig.enabledSources);
   const selected = new Set(preferences.enabledSources);
   const categoryText = preferences.categories.map(({ label, query }) => `${label}=${query}`).join('\n') || DEFAULT_CATEGORY_TEXT;
-  const sourceInputs = serverConfig.enabledSources.map(source => `
+  const sourceInputs = (serverConfig.availableSources || serverConfig.enabledSources).map(source => `
     <label class="source-card">
       <input type="checkbox" name="source" value="${escapeHtml(source)}"${selected.has(source) ? ' checked' : ''}>
-      <span><strong>${escapeHtml(siteLabel(source))}</strong><small>Built-in provider adapter</small></span>
+      <span><strong>${escapeHtml(siteLabel(source))}</strong><small>${String(source).startsWith('x:') ? 'Automatic public X media feed' : 'Built-in provider adapter'}</small></span>
     </label>`).join('');
   const safeBasePath = escapeHtml(basePath);
   return `<!doctype html>

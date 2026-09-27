@@ -22,7 +22,7 @@ export function createApp(config, dependencies) {
     if (req.originalUrl.length > 4096) return res.sendStatus(414);
     next();
   });
-  app.get('/health', (_req, res) => res.json({ status: 'ok', version: '1.3.0' }));
+  app.get('/health', (_req, res) => res.json({ status: 'ok', version: '1.4.0' }));
   const addon = createAddon(config, dependencies);
   const router = sdk.getRouter(addon);
   const sendConfigure = basePath => (req, res) => {
@@ -32,13 +32,13 @@ export function createApp(config, dependencies) {
   };
   const sendBaseManifest = async (_req, res) => {
     const discovered = await addon.discoverCategories();
-    res.json(configuredManifest(addon.manifest, {}, config.enabledSources, discovered, false));
+    res.json(configuredManifest(addon.manifest, {}, config.availableSources || config.enabledSources, discovered, false));
   };
   const sendConfiguredManifest = async (req, res) => {
     const raw = parseEncodedPreferences(req.params.userConfig);
     if (!raw) return res.sendStatus(400);
     const discovered = await addon.discoverCategories();
-    res.json(configuredManifest(addon.manifest, raw, config.enabledSources, discovered));
+    res.json(configuredManifest(addon.manifest, raw, config.availableSources || config.enabledSources, discovered));
   };
   if (config.addonToken) {
     const privateRoute = (req, res, next) => matches(req.params.token, config.addonToken) ? next() : res.sendStatus(404);

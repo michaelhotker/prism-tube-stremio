@@ -9,6 +9,8 @@ services:
       HOST: 0.0.0.0
       PORT: 7000
       ENABLED_SOURCES: ${ENABLED_SOURCES:-xvideos,homo,xhamster,xnxx}
+      X_ACCOUNTS: ${X_ACCOUNTS:-}
+      RSSHUB_URL: http://rsshub:1200
       ADDON_TOKEN: ${ADDON_TOKEN:-}
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-12000}
       EXTRACT_TIMEOUT_MS: ${EXTRACT_TIMEOUT_MS:-25000}
@@ -17,6 +19,9 @@ services:
       MAX_RESULTS: ${MAX_RESULTS:-60}
       MAX_STREAMS: ${MAX_STREAMS:-4}
       SEARCH_CONCURRENCY: ${SEARCH_CONCURRENCY:-2}
+    depends_on:
+      rsshub:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -31,3 +36,37 @@ services:
       retries: 3
       start_period: 20s
 
+  rsshub:
+    image: diygod/rsshub:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      TWITTER_AUTH_TOKEN: ${TWITTER_AUTH_TOKEN:-}
+      CACHE_TYPE: redis
+      REDIS_URL: redis://redis:6379/
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:1200/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    read_only: true
+    tmpfs:
+      - /data:size=32m,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

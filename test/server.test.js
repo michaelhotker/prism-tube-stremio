@@ -19,9 +19,19 @@ test('configure page creates separate Porn catalogs with provider tags', async t
   assert.match(await page.text(), /Install configured add-on/);
   const preferences = encodeURIComponent(JSON.stringify({ sources: 'homo', primaryTag: 'My Tag', categories: 'Tender=romance' }));
   const manifest = await (await fetch(`${base}/${preferences}/manifest.json`)).json();
-  assert.equal(manifest.version, '1.3.0');
+  assert.equal(manifest.version, '1.4.0');
   assert.deepEqual(manifest.types, ['Porn']);
   assert.equal(manifest.behaviorHints.configurable, undefined);
   assert.deepEqual(manifest.catalogs.map(catalog => catalog.id), ['prism-tube-homo']);
   assert.deepEqual(manifest.catalogs[0].extra.find(extra => extra.name === 'genre').options, ['Massage', 'Bear', 'Tender']);
+});
+
+test('configure page exposes each server-configured X account as a provider', async t => {
+  const xConfig = { ...config, xAccounts: ['example'], availableSources: ['homo', 'xnxx', 'x:example'], rssHubBaseUrl: 'http://rsshub:1200' };
+  const app = createApp(xConfig, { log: () => {}, fetchText: async () => '', fetchTwitterFeed: async () => [], extract: async () => ({}) });
+  const server = app.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  await once(server, 'listening');
+  const page = await fetch(`http://127.0.0.1:${server.address().port}/configure`);
+  assert.match(await page.text(), /X @example/);
 });

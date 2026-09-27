@@ -1,8 +1,8 @@
 {
   "name": "prism-tube-stremio",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
-  "description": "Self-hosted Stremio catalog and stream addon for configured gay tube sites",
+  "description": "Self-hosted Stremio catalogs and streams for configured tube sites and public X media feeds",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/michaelhotker/prism-tube-stremio.git"
