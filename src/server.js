@@ -4,6 +4,8 @@ import { timingSafeEqual } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { loadConfig } from './config.js';
 import { createAddon } from './addon.js';
+import { configuredManifest, renderConfigurePage } from './configure-page.js';
+import { parseEncodedPreferences } from './preferences.js';
 
 const matches = (value, expected) => {
   const a = Buffer.from(value || ''); const b = Buffer.from(expected);
@@ -20,10 +22,31 @@ export function createApp(config, dependencies) {
     if (req.originalUrl.length > 4096) return res.sendStatus(414);
     next();
   });
-  app.get('/health', (_req, res) => res.json({ status: 'ok', version: '1.0.0' }));
-  const router = sdk.getRouter(createAddon(config, dependencies));
-  if (config.addonToken) app.use('/:token', (req, res, next) => matches(req.params.token, config.addonToken) ? next() : res.sendStatus(404), router);
-  else app.use(router);
+  app.get('/health', (_req, res) => res.json({ status: 'ok', version: '1.2.0' }));
+  const addon = createAddon(config, dependencies);
+  const router = sdk.getRouter(addon);
+  const sendConfigure = basePath => (req, res) => {
+    const raw = req.params.userConfig ? parseEncodedPreferences(req.params.userConfig) : {};
+    if (req.params.userConfig && !raw) return res.sendStatus(400);
+    res.type('html').send(renderConfigurePage(addon.manifest, config, raw, basePath));
+  };
+  const sendConfiguredManifest = (req, res) => {
+    const raw = parseEncodedPreferences(req.params.userConfig);
+    if (!raw) return res.sendStatus(400);
+    res.json(configuredManifest(addon.manifest, raw, config.enabledSources));
+  };
+  if (config.addonToken) {
+    const privateRoute = (req, res, next) => matches(req.params.token, config.addonToken) ? next() : res.sendStatus(404);
+    app.get('/:token/configure', privateRoute, (req, res) => sendConfigure(`/${config.addonToken}`)(req, res));
+    app.get('/:token/:userConfig/configure', privateRoute, (req, res) => sendConfigure(`/${config.addonToken}`)(req, res));
+    app.get('/:token/:userConfig/manifest.json', privateRoute, sendConfiguredManifest);
+    app.use('/:token', privateRoute, router);
+  } else {
+    app.get('/configure', sendConfigure(''));
+    app.get('/:userConfig/configure', sendConfigure(''));
+    app.get('/:userConfig/manifest.json', sendConfiguredManifest);
+    app.use(router);
+  }
   app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
   return app;
 }

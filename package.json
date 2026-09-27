@@ -1,6 +1,6 @@
 {
   "name": "prism-tube-stremio",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Self-hosted Stremio catalog and stream addon for configured gay tube sites",
   "repository": {

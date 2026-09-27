@@ -9,7 +9,7 @@ const config = { extractTimeoutMs: 5000, userAgent: 'Test/1.0', maxStreams: 3 };
 test('extractor invokes yt-dlp without downloading media and with a deadline', async () => {
   let call;
   const runner = async (...args) => { call = args; return { title: 'Example', url: 'https://cdn.example/v.mp4' }; };
-  const result = await createExtractor(config, runner)(pageUrl);
+  const result = await createExtractor(config, runner, async () => '<html></html>')(pageUrl);
   assert.equal(result.title, 'Example');
   assert.equal(call[0], pageUrl);
   assert.equal(call[1].skipDownload, true);
@@ -34,18 +34,22 @@ test('stream conversion selects bounded audio-video qualities and safe proxy hea
 
 test('metadata uses extracted title and poster', () => {
   const id = encodeId(pageUrl);
-  const meta = metaFromExtraction({ title: 'Example', thumbnail: 'https://img.example/poster.jpg', duration_string: '12:34' }, id, pageUrl);
+  const meta = metaFromExtraction({ title: 'Example', thumbnail: 'https://img.example/poster.jpg', duration_string: '12:34',
+    tags: ['Romance', 'Muscular'] }, id, pageUrl, ['Gay Male']);
   assert.equal(meta.id, id);
   assert.equal(meta.name, 'Example');
   assert.equal(meta.posterShape, 'landscape');
+  assert.deepEqual(meta.genres, ['Gay Male', 'Romance', 'Muscular']);
 });
 
-test('public JSON-LD player metadata provides a fallback direct stream', async () => {
-  const html = `<script type="application/ld+json">${JSON.stringify({ name: 'Example', thumbnailUrl: ['https://img.example/poster.jpg'],
+test('public JSON-LD player metadata provides a fallback direct stream and page tags', async () => {
+  const html = `<div class="video-tags-list"><a class="is-keyword">Romance</a><a class="is-keyword">Couples</a></div>
+    <script type="application/ld+json">${JSON.stringify({ name: 'Example', thumbnailUrl: ['https://img.example/poster.jpg'],
     duration: 'PT00H05M03S', contentUrl: 'https://cdn.example/video_720p.mp4' })}</script>`;
   const parsed = parsePublicPlayerPage('xvideos', html);
   assert.equal(parsed.formats[0].height, 720);
   assert.equal(parsed.duration_string, '0:05:03');
+  assert.deepEqual(parsed.tags, ['Romance', 'Couples']);
   const extracted = await createExtractor(config, async () => { throw new Error('unsupported'); }, async () => html)(
     'https://www.xvideos.com/video.abc123/example'
   );
@@ -54,7 +58,17 @@ test('public JSON-LD player metadata provides a fallback direct stream', async (
 
 test('public xHamster player metadata provides its advertised qualities', () => {
   const player = { videoTitle: 'Example', sources: { mp4: { '240p': 'https://cdn.example/240.mp4', '720p': 'https://cdn.example/720.mp4' } } };
-  const html = `<meta property="og:image" content="https://img.example/poster.jpg"><script>window.initials=${JSON.stringify({ player })};</script>`;
+  const videoTagsComponent = { tags: [{ name: 'Romance', isCategory: true }, { name: 'Uploader', isCategory: false, isTag: false }] };
+  const html = `<meta property="og:image" content="https://img.example/poster.jpg"><script>window.initials=${JSON.stringify({ player, videoTagsComponent })};</script>`;
   const parsed = parsePublicPlayerPage('xhamster', html);
   assert.deepEqual(parsed.formats.map(format => format.height), [240, 720]);
+  assert.deepEqual(parsed.tags, ['Romance']);
+});
+
+test('Homo.xxx public category links augment maintained extractor results', async () => {
+  const html = '<meta property="og:title" content="Example"><a href="/categories/romance/">Romance</a><a href="/categories/fitness/">Fitness</a>';
+  const runner = async () => ({ title: 'Example', url: 'https://cdn.example/video.mp4', ext: 'mp4' });
+  const parsed = await createExtractor(config, runner, async () => html)(pageUrl);
+  assert.deepEqual(parsed.tags, ['Romance', 'Fitness']);
+  assert.equal(parsed.url, 'https://cdn.example/video.mp4');
 });

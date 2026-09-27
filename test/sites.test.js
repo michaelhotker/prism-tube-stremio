@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSite, listUrl } from '../src/sites.js';
+import { DEFAULT_CATEGORIES, categoryTerm } from '../src/preferences.js';
 import { decodeId, encodeId, sourceForUrl } from '../src/ids.js';
 
 const fixtures = {
@@ -33,4 +34,10 @@ test('search URLs remain fixed to gay-scoped public listing paths', () => {
   assert.equal(listUrl('xnxx', 'soft romance', 0), 'https://www.xnxx.com/search/gay/soft%20romance');
   assert.equal(listUrl('homo', 'soft romance', 2), 'https://homo.xxx/search/soft%20romance/2/');
   assert.equal(listUrl('xhamster', 'soft romance', 1), 'https://xhamster.com/gay/search/soft%20romance/2');
+});
+
+test('catalog categories map to bounded neutral search terms', () => {
+  assert.ok(DEFAULT_CATEGORIES.some(category => category.label === 'Romance'));
+  assert.equal(categoryTerm(DEFAULT_CATEGORIES, 'Fitness'), 'muscle');
+  assert.equal(categoryTerm(DEFAULT_CATEGORIES, 'Unknown'), null);
 });

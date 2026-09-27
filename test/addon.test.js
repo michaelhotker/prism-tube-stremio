@@ -19,7 +19,9 @@ test('catalog, metadata and stream handlers form a complete Stremio flow', async
   const catalog = await addon.get('catalog', 'movie', 'prism-tube', { search: 'example' });
   assert.equal(catalog.metas.length, 1);
   const id = catalog.metas[0].id;
-  assert.deepEqual((await addon.get('meta', 'movie', id)).meta, catalog.metas[0]);
+  const meta = (await addon.get('meta', 'movie', id)).meta;
+  assert.equal(meta.id, catalog.metas[0].id);
+  assert.deepEqual(meta.genres, ['Gay Male']);
   const streams = (await addon.get('stream', 'movie', id)).streams;
   assert.equal(streams.length, 2);
   assert.equal(streams[0].url, 'https://cdn.example/v.mp4');
@@ -28,6 +30,33 @@ test('catalog, metadata and stream handlers form a complete Stremio flow', async
   await addon.get('stream', 'movie', id);
   assert.equal(fetched, 1);
   assert.equal(extracted, 1);
+});
+
+test('manifest categories filter provider searches and tag catalog results', async () => {
+  let requestedUrl;
+  const addon = createAddon(config, {
+    log: () => {}, fetchText: async url => { requestedUrl = url; return html; }, extract: async () => ({})
+  });
+  const genreExtra = addon.manifest.catalogs[0].extra.find(extra => extra.name === 'genre');
+  assert.ok(genreExtra.options.includes('Romance'));
+  const catalog = await addon.get('catalog', 'movie', 'prism-tube', { genre: 'Romance', search: 'story' });
+  assert.match(requestedUrl, /search\/romance%20story\//);
+  assert.deepEqual(catalog.metas[0].genres, ['Gay Male', 'Romance']);
+  assert.deepEqual(await addon.get('catalog', 'movie', 'prism-tube', { genre: 'Unknown' }), { metas: [] });
+});
+
+test('per-install configuration changes sources, category terms and result tags', async () => {
+  let requestedUrl;
+  const multiConfig = { ...config, enabledSources: ['homo', 'xnxx'] };
+  const addon = createAddon(multiConfig, {
+    log: () => {}, fetchText: async url => { requestedUrl = url; return html; }, extract: async () => ({})
+  });
+  const userConfig = { sources: 'homo', primaryTag: 'My Library', categories: 'Tender=romance\nClassic=mature' };
+  const catalog = await addon.get('catalog', 'movie', 'prism-tube', { genre: 'Tender' }, userConfig);
+  assert.match(requestedUrl, /search\/romance\//);
+  assert.deepEqual(catalog.metas[0].genres, ['My Library', 'Tender']);
+  const disabled = encodeId('https://www.xnxx.com/video-abc123/example');
+  assert.deepEqual(await addon.get('stream', 'movie', disabled, {}, userConfig), { streams: [] });
 });
 
 test('disabled or malformed IDs cannot invoke extraction', async () => {

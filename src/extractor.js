@@ -36,8 +36,25 @@ function findPlayer(value, seen = new WeakSet(), depth = 0) {
   return null;
 }
 
+function normalizedTags(values, limit = 14) {
+  const seen = new Set();
+  const tags = [];
+  for (const value of values.flat()) {
+    const tag = clean(value).replace(/\s+/g, ' ').slice(0, 40);
+    const key = tag.toLocaleLowerCase('en');
+    if (!tag || tag.length < 2 || seen.has(key)) continue;
+    seen.add(key); tags.push(tag);
+    if (tags.length === limit) break;
+  }
+  return tags;
+}
+
 export function parsePublicPlayerPage(source, html) {
   const $ = cheerio.load(html);
+  let tags = [];
+  if (source === 'xvideos' || source === 'xnxx') tags = $('.is-keyword').map((_index, node) => $(node).text()).get();
+  if (source === 'homo') tags = $('a[href*="/categories/"]').map((_index, node) => $(node).text()).get()
+    .filter(tag => tag.trim().toLocaleLowerCase('en') !== 'categories');
   if (source === 'xvideos' || source === 'xnxx') {
     for (const node of $('script[type="application/ld+json"]')) {
       try {
@@ -46,7 +63,7 @@ export function parsePublicPlayerPage(source, html) {
         if (!url) continue;
         const thumbnail = (Array.isArray(data.thumbnailUrl) ? data.thumbnailUrl : [data.thumbnailUrl]).map(httpsUrl).find(Boolean);
         const height = Number(url.match(/video_(\d{3,4})p/i)?.[1]) || undefined;
-        return { title: clean(data.name || 'Tube video'), thumbnail, duration_string: durationString(data.duration),
+        return { title: clean(data.name || 'Tube video'), thumbnail, duration_string: durationString(data.duration), tags: normalizedTags(tags),
           formats: [{ url, height, ext: 'mp4', vcodec: 'unknown', acodec: 'unknown' }] };
       } catch { /* try the next JSON-LD block */ }
     }
@@ -57,16 +74,25 @@ export function parsePublicPlayerPage(source, html) {
     const end = start < 0 ? -1 : html.indexOf(';</script>', start + marker.length);
     if (start >= 0 && end > start && end - start < 2_000_000) {
       try {
-        const player = findPlayer(JSON.parse(html.slice(start + marker.length, end)));
+        const initials = JSON.parse(html.slice(start + marker.length, end));
+        const player = findPlayer(initials);
+        tags = (initials.videoTagsComponent?.tags || [])
+          .filter(tag => tag?.isCategory || tag?.isTag)
+          .map(tag => tag.name);
         const formats = Object.entries(player?.sources?.mp4 || {}).map(([label, value]) => ({
           url: httpsUrl(value), height: Number(label.match(/(\d{3,4})p/i)?.[1]) || undefined,
           ext: 'mp4', vcodec: 'unknown', acodec: 'unknown'
         })).filter(format => format.url);
         if (formats.length) return { title: clean(player.videoTitle || $('meta[property="og:title"]').attr('content') || 'Tube video'),
-          thumbnail: httpsUrl($('meta[property="og:image"]').attr('content')), formats };
+          thumbnail: httpsUrl($('meta[property="og:image"]').attr('content')), tags: normalizedTags(tags), formats };
       } catch { /* fall through to a generic extraction error */ }
     }
   }
+  if (source === 'homo' && tags.length) return {
+    title: clean($('meta[property="og:title"]').attr('content') || 'Tube video'),
+    thumbnail: httpsUrl($('meta[property="og:image"]').attr('content')),
+    tags: normalizedTags(tags)
+  };
   throw new Error('Public player metadata was not found');
 }
 
@@ -76,6 +102,10 @@ export function createExtractor(config, runner = youtubedl, pageFetcher = create
   return async function extract(pageUrl) {
     const source = sourceForUrl(pageUrl);
     if (!source) throw new Error('Unsupported video URL');
+    let pageData;
+    try { pageData = parsePublicPlayerPage(source, await pageFetcher(pageUrl, siteHosts(source))); }
+    catch { /* the maintained extractor may still support this page */ }
+    if (hasMedia(pageData)) return pageData;
     let data;
     try {
       data = await runner(pageUrl, {
@@ -83,10 +113,15 @@ export function createExtractor(config, runner = youtubedl, pageFetcher = create
         socketTimeout: Math.max(3, Math.floor(config.extractTimeoutMs / 1000)),
         userAgent: config.userAgent
       }, { timeout: config.extractTimeoutMs, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024 });
-    } catch { /* use the public page metadata fallback below */ }
-    if (data && typeof data === 'object' && hasMedia(data)) return data;
-    try { return parsePublicPlayerPage(source, await pageFetcher(pageUrl, siteHosts(source))); }
-    catch { throw new Error('Video extraction failed'); }
+    } catch { /* handled below */ }
+    if (data && typeof data === 'object' && hasMedia(data)) return {
+      ...pageData,
+      ...data,
+      thumbnail: data.thumbnail || pageData?.thumbnail,
+      title: data.title || pageData?.title,
+      tags: normalizedTags([pageData?.tags || [], data.categories || [], data.tags || []])
+    };
+    throw new Error('Video extraction failed');
   };
 }
 
@@ -133,7 +168,7 @@ export function streamsFromExtraction(data, pageUrl, config) {
   });
 }
 
-export function metaFromExtraction(data, id, pageUrl) {
+export function metaFromExtraction(data, id, pageUrl, baseTags = []) {
   const thumbnails = Array.isArray(data.thumbnails) ? data.thumbnails : [];
   const poster = data.thumbnail || thumbnails.at(-1)?.url;
   return {
@@ -141,6 +176,7 @@ export function metaFromExtraction(data, id, pageUrl) {
     ...(poster ? { poster, background: poster } : {}),
     posterShape: 'landscape',
     description: [SOURCE_LABELS[sourceForUrl(pageUrl)], data.duration_string].filter(Boolean).join(' · '),
+    genres: normalizedTags([baseTags, data.categories || [], data.tags || []]),
     behaviorHints: { defaultVideoId: id }
   };
 }
